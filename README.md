@@ -1,6 +1,6 @@
 # Quantitative Finance Algorithms
 
-A collection of quantitative finance algorithms implemented during the Quantitative Methods in Finance and Quantitative Portfolio Management graduate courses at NEU (Northeastern University), as part of the Master of Science in Quantitative Finance program.
+A collection of quantitative finance algorithms implemented during the Quantitative Methods in Finance and Quantitative Portfolio Management graduate courses at Northeastern University, as part of the Master of Science in Finance program.
 
 ---
 
@@ -11,9 +11,11 @@ A collection of quantitative finance algorithms implemented during the Quantitat
 - [3. Volatility Estimation & GARCH Modeling](#3-volatility-estimation--garch-modeling)
 - [4. Quantitative Portfolio Optimisation](#4-quantitative-portfolio-optimisation)
   - [4.1 Data, Statistics & Optimisation Inputs](#41-data-statistics--optimisation-inputs)
-  - [4.2 Minimum-Variance & Maximum-Return](#42-minimum-variance--maximum-return)
-  - [4.3 Maximum-Sharpe & Risk-Parity](#43-maximum-sharpe--risk-parity)
-  - [4.4 Black-Litterman](#44-black-litterman)
+  - [4.2 Minimum-Variance Portfolio](#42-minimum-variance-portfolio)
+  - [4.3 Maximum-Return Portfolio](#43-maximum-return-portfolio)
+  - [4.4 Maximum-Sharpe Portfolio](#44-maximum-sharpe-portfolio)
+  - [4.5 Risk-Parity Portfolio](#45-risk-parity-portfolio)
+  - [4.6 Black-Litterman Portfolio](#46-black-litterman-portfolio)
 
 ---
 
@@ -121,54 +123,85 @@ Key correlation findings: ETH–BTC correlation of 0.82 forms a tight crypto clu
 
 ---
 
-### 4.2 Minimum-Variance & Maximum-Return
+### 4.2 Minimum-Variance Portfolio
 
-Solved the two boundary optimisation problems — one minimising portfolio volatility using only the covariance matrix, the other maximising expected return with no risk penalty. Despite delivering nearly double the cumulative return, the Maximum-Return portfolio concentrated 100% in BTC-USD and achieved a lower Sharpe ratio, confirming that return maximisation without risk control is counterproductive on a risk-adjusted basis.
+Solved the global minimum-variance problem using only the covariance matrix — expected returns are ignored entirely, making this the most robust method to return estimation error. Both crypto assets receive zero weight given their extreme volatility. SPY dominates at 77.95% as the lowest-volatility anchor.
 
-#### Objective Functions
+#### Objective Function
 
-**Minimum-Variance:**
 $$w^* = \arg\min_{w} \sqrt{w^\top \Sigma w} \quad \text{s.t.} \quad \sum_i w_i = 1, \quad w_i \in [0,1]$$
 
-**Maximum-Return:**
+#### Results
+
+| Metric | Value |
+|---|---|
+| Ann. Return | 14.60% |
+| Ann. Volatility | **14.86%** |
+| Sharpe Ratio | 0.7405 |
+| Period Return | 43.45% |
+| Active Assets | 4 (SPY, ABEV, PBR, IEO) |
+
+---
+
+### 4.3 Maximum-Return Portfolio
+
+Maximised expected return with no risk penalty. Under long-only constraints this degenerates to 100% allocation to the single highest-return asset. Despite delivering the highest raw return, it produces the lowest Sharpe ratio of all five methods — confirming that return maximisation without risk control is counterproductive on a risk-adjusted basis.
+
+#### Objective Function
+
 $$w^* = \arg\max_{w} \mu^\top w \quad \text{s.t.} \quad \sum_i w_i = 1, \quad w_i \in [0,1]$$
 
 #### Results
 
-| Metric | Min-Variance | Max-Return |
-|---|---|---|
-| Ann. Return | 14.60% | 27.03% |
-| Ann. Volatility | **14.86%** | 43.51% |
-| Sharpe Ratio | 0.7405 | 0.5386 |
-| Period Return | 43.45% | 94.64% |
-| Active Assets | 4 | 1 (BTC 100%) |
+| Metric | Value |
+|---|---|
+| Ann. Return | 27.03% |
+| Ann. Volatility | 43.51% |
+| Sharpe Ratio | 0.5386 |
+| Period Return | 94.64% |
+| Active Assets | 1 (BTC-USD 100%) |
 
 ---
 
-### 4.3 Maximum-Sharpe & Risk-Parity
+### 4.4 Maximum-Sharpe Portfolio
 
-Implemented the tangency portfolio and the equal risk contribution portfolio, representing return-seeking and risk-budgeting approaches respectively. The Maximum-Sharpe portfolio achieved the best naive Sharpe ratio by concentrating in three assets, while Risk-Parity was the only method to allocate across all six assets simultaneously — forcing each to contribute exactly 1/N ≈ 16.67% of total portfolio variance.
+Finds the tangency portfolio — the point on the efficient frontier where the capital market line is tangent, maximising excess return per unit of risk. Uses both μ̂ and Σ̂ simultaneously. Concentrates in three assets (SPY, PBR, BTC) and achieves the best Sharpe ratio among the naive mean-variance methods.
 
-#### Objective Functions
+#### Objective Function
 
-**Maximum-Sharpe (Tangency Portfolio):**
 $$w^* = \arg\max_{w} \frac{\mu_p - r_f}{\sigma_p} \quad \text{where} \quad \mu_p = \mu^\top w, \quad \sigma_p = \sqrt{w^\top \Sigma w \cdot 252} \times 100$$
 
-**Risk-Parity (Equal Risk Contribution):**
+#### Results
+
+| Metric | Value |
+|---|---|
+| Ann. Return | 18.33% |
+| Ann. Volatility | 17.16% |
+| Sharpe Ratio | **0.8593** |
+| Period Return | 58.22% |
+| Active Assets | 3 (SPY, PBR, BTC) |
+
+---
+
+### 4.5 Risk-Parity Portfolio
+
+Forces each asset to contribute exactly 1/N ≈ 16.67% of total portfolio variance. Expected returns are not used — only Σ̂ is required — making this the most robust method to return estimation error alongside Min-Variance. The only method to allocate across all six assets simultaneously.
+
+#### Objective Function
+
 $$w^* = \arg\min_{w} \frac{1}{N} \sum_{i=1}^{N} \left( RC_i - \bar{RC} \right)^2 \quad \text{where} \quad RC_i = \frac{w_i \cdot (\Sigma w)_i}{w^\top \Sigma w}$$
 
 #### Results
 
-| Metric | Max-Sharpe | Risk-Parity |
-|---|---|---|
-| Ann. Return | 18.33% | 15.94% |
-| Ann. Volatility | 17.16% | 18.73% |
-| Sharpe Ratio | **0.8593** | 0.6593 |
-| Period Return | 58.22% | 49.40% |
-| Active Assets | 3 | **6 (all)** |
-| Uses μ̂? | Yes | No |
+| Metric | Value |
+|---|---|
+| Ann. Return | 15.94% |
+| Ann. Volatility | 18.73% |
+| Sharpe Ratio | 0.6593 |
+| Period Return | 49.40% |
+| Active Assets | **6 (all)** |
 
-#### Risk-Parity Risk Contributions
+#### Risk Contributions
 
 | Asset | Weight | Risk Contribution |
 |---|---|---|
@@ -181,7 +214,7 @@ $$w^* = \arg\min_{w} \frac{1}{N} \sum_{i=1}^{N} \left( RC_i - \bar{RC} \right)^2
 
 ---
 
-### 4.4 Black-Litterman
+### 4.6 Black-Litterman Portfolio
 
 Applied a Bayesian framework combining an EWMA equilibrium prior with two absolute investor views, blending them through quantified uncertainty parameters to produce posterior expected returns. The resulting portfolio achieved the highest Sharpe ratio of all five methods, added ABEV to the allocation where the naive Max-Sharpe had ignored it, and demonstrated meaningfully more stable weight construction than any naive mean-variance approach.
 
@@ -242,6 +275,38 @@ EWMA was chosen over the sample mean (more responsive to recent regime) and over
 | Max-Sharpe | 18.33% | 17.16% | 0.8593 | 58.22% | 3 |
 | Risk-Parity | 15.94% | 18.73% | 0.6593 | 49.40% | 6 |
 | **Black-Litterman** | **19.42%** | **16.77%** | **0.9443** | 55.24% | 4 |
+
+---
+
+## Repository Structure
+
+```
+Quant_Finance/
+├── 01_Descriptive_Analysis/
+│   └── descriptive_analysis.py          # HW1 Parts A1, A2, A3
+├── 02_Factor_Models/
+│   └── factor_models.py                 # HW1 Part B — CAPM through FF5
+├── 03_Volatility_GARCH/
+│   └── volatility_garch.py              # HW1 Part C — GK estimator + GARCH
+└── 04_Portfolio_Optimisation/
+    ├── part_a_data_inputs.py            # HW2 Part A — data, stats, μ̂ Σ̂ rf
+    ├── part_b_optimisers.py             # HW2 Part B — all five methods + comparison
+    ├── part_c_analysis.py               # HW2 Part C — post-optimisation analysis
+    ├── optimiser_min_variance.py        # standalone Min-Variance
+    ├── optimiser_max_return.py          # standalone Max-Return
+    ├── optimiser_max_sharpe.py          # standalone Max-Sharpe
+    ├── optimiser_risk_parity.py         # standalone Risk-Parity
+    └── optimiser_black_litterman.py     # standalone Black-Litterman
+```
+
+**Run order for portfolio optimisation:**
+```bash
+python part_a_data_inputs.py    # writes clean_returns.csv
+python part_b_optimisers.py     # writes optimal_weights.csv
+python part_c_analysis.py       # reads both, produces all output
+```
+
+Each standalone optimiser (`optimiser_*.py`) is fully self-contained and reads `clean_returns.csv` directly.
 
 ---
 
