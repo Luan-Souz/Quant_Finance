@@ -26,9 +26,9 @@ import statsmodels.api as sm
 # ─────────────────────────────────────────────────────────────────────────────
 
 DATA_PATH   = "HM1_QPM_database.xlsx"           # update path as needed
-FACTOR_PATH = "F-F_Research_Data_Factors_daily_CSV.csv"
-MOM_PATH    = "F-F_Momentum_Factor_daily_CSV.csv"
-FF5_PATH    = "F-F_Research_Data_5_Factors_2x3_daily_CSV.csv"
+FACTOR_PATH = "F-F_Research_Data_Factors_daily.csv"
+MOM_PATH    = "F-F_Momentum_Factor_daily.csv"
+FF5_PATH    = "F-F_Research_Data_5_Factors_2x3_daily.csv"
 SAMPLE_SIZE = 500                                # number of observations used
 
 # ─────────────────────────────────────────────────────────────────────────────
