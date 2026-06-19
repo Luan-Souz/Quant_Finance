@@ -1,3 +1,4 @@
+
 # Quantitative Finance Algorithms
 
 A collection of quantitative finance algorithms implemented during the Quantitative Methods in Finance and Quantitative Portfolio Management graduate courses at Northeastern University, as part of the Master of Science in Finance program.
@@ -23,6 +24,14 @@ A collection of quantitative finance algorithms implemented during the Quantitat
   * [5.4 Black-Scholes Model](#54-black-scholes-model)
   * [5.5 Monte Carlo — Risk-Neutral GBM](#55-monte-carlo--risk-neutral-gbm)
   * [5.6 Heston Stochastic Volatility Model](#56-heston-stochastic-volatility-model)
+- [6. Dynamic Bond ETF Allocation — Nelson-Siegel & Diebold-Li VAR](#6-dynamic-bond-etf-allocation--nelson-siegel--diebold-li-var)
+  * [6.1 Nelson-Siegel Curve Fitting & Diagnostics](#61-nelson-siegel-curve-fitting--diagnostics)
+  * [6.2 Diebold-Li VAR(1) Factor Forecasts](#62-diebold-li-var1-factor-forecasts)
+  * [6.3 Signal Construction & Portfolio Weights](#63-signal-construction--portfolio-weights)
+  * [6.4 Signal Decomposition: NS Mispricing vs DL Directional](#64-signal-decomposition-ns-mispricing-vs-dl-directional)
+  * [6.5 Individual Factor Attribution](#65-individual-factor-attribution)
+  * [6.6 Full-Period Backtest Results (2009–2024)](#66-full-period-backtest-results-20092024)
+  * [6.7 Sub-Period Analysis (2018–2021)](#67-sub-period-analysis-20182021)
 
 ---
 
@@ -357,12 +366,12 @@ Priced European call and put options using a multi-step CRR binomial tree. With 
 
 #### Parameters & Base-Case Results
 
-| Parameter | Value   | Metric            | Call    | Put     |
-| --------- | ------  | ----------------- | ------- | ------- |
-| n         | 4       | Price (C₀/P₀)     | 10.1532 | 10.5999 |
-| u         | 1.1618  | p* (risk-neutral) | 0.4967  | —       |
-| d         | 0.8607  | C − P             | −0.4468 | —       |
-| Δt        | 0.2500  | S₀ − Ke^(−rT)     | −0.8829 | —       |
+| Parameter | Value  |   | Metric            | Call    | Put     |
+| --------- | ------ | - | ----------------- | ------- | ------- |
+| n         | 4      |   | Price (C₀/P₀)     | 10.1532 | 10.5999 |
+| u         | 1.1618 |   | p* (risk-neutral) | 0.4967  | —       |
+| d         | 0.8607 |   | C − P             | −0.4468 | —       |
+| Δt        | 0.2500 |   | S₀ − Ke^(−rT)     | −0.8829 | —       |
 
 Put-call parity difference of 0.4361 at n=4 shrinks toward zero as the tree refines — the binomial model satisfies parity exactly in the continuous limit.
 
@@ -503,6 +512,129 @@ As ρ → 0 the leverage effect disappears and the Heston price converges toward
 
 ---
 
+## 6. Dynamic Bond ETF Allocation — Nelson-Siegel & Diebold-Li VAR
+
+A group research project that develops a systematic fixed income allocation strategy across seven U.S. Treasury ETFs by combining the Nelson-Siegel yield curve model with the Diebold-Li dynamic factor extension. Each month, Nelson-Siegel is fit to the Treasury par yield curve via cross-sectional OLS, extracting three factors — level (β₀), slope (β₁), and curvature (β₂) — along with mispricing residuals at each ETF's effective maturity. These factors are then modeled jointly as a VAR(1) on an expanding window to generate one-month-ahead yield forecasts. A dual signal — cross-sectional mispricing and time-series directional — drives the allocation, with factor loadings tilted 60/20/20 toward slope based on individual factor attribution. The signal-proportional strategy outperforms the equal-weight benchmark on a risk-adjusted basis across the full 2008–2024 sample, with the outperformance most pronounced during the 2019 Fed rate-cut cycle and the 2020 COVID-19 shock.
+
+### Universe & Data
+
+| ETF  | Type                          | Eff. Duration |
+| ---- | ----------------------------- | ------------- |
+| SHV  | iShares Short Treasury Bond   | ~0.5 years    |
+| SHY  | iShares 1–3 Year Treasury     | ~2 years      |
+| IEI  | iShares 3–7 Year Treasury     | ~4.5 years    |
+| IEF  | iShares 7–10 Year Treasury    | ~8.5 years    |
+| TLH  | iShares 10–20 Year Treasury   | ~15 years     |
+| TLT  | iShares 20+ Year Treasury     | ~20 years     |
+| EDV  | Vanguard Extended Duration    | ~25 years     |
+
+- **Yield data:** FRED par yields — DGS2, DGS3, DGS5, DGS7, DGS10, DGS20, DGS30 — resampled to month-end
+- **ETF prices:** Yahoo Finance adjusted close, month-end · ~204 aligned observations
+- **Sample:** January 2008 – December 2024
+
+---
+
+### 6.1 Nelson-Siegel Curve Fitting & Diagnostics
+
+Fits the three-factor Nelson-Siegel model to the Treasury par yield curve each month via cross-sectional OLS with the decay parameter fixed at λ = 0.0609, following Diebold and Li (2006). Fixing λ linearises the model, reducing estimation to a single OLS regression per period. Multicollinearity is verified using the Annaert et al. (2010) condition number diagnostic — κ = 6.64, well below the critical threshold of 10, confirming OLS is appropriate without ridge regularisation.
+
+#### Nelson-Siegel Model
+
+$$y(\tau) = \beta_0 + \beta_1 \cdot \frac{1 - e^{-\lambda\tau}}{\lambda\tau} + \beta_2 \cdot \left[\frac{1 - e^{-\lambda\tau}}{\lambda\tau} - e^{-\lambda\tau}\right]$$
+
+| Factor     | Symbol | Economic Interpretation                              |
+| ---------- | ------ | ---------------------------------------------------- |
+| Level      | β₀     | Long-run yield — overall height of the curve         |
+| Slope      | β₁     | Short-to-long spread — business cycle & policy stance |
+| Curvature  | β₂     | Intermediate hump — medium-term dynamics             |
+
+Cross-sectional OLS estimation:
+
+$$\mathbf{y}_t = \mathbf{X}\boldsymbol{\beta}_t + \boldsymbol{\varepsilon}_t$$
+
+The residual vector εₜ captures deviations from the fair-value curve at each maturity and forms the basis of the mispricing signal. The condition number κ = 6.64 < 10 validates plain OLS for the maturity vector {2, 3, 5, 7, 10, 20, 30} at λ = 0.0609.
+
+---
+
+### 6.2 Diebold-Li VAR(1) Factor Forecasts
+
+Models the joint time-series dynamics of the three extracted Nelson-Siegel factors using a full VAR(1) on an expanding window with a 36-month burn-in, generating one-month-ahead yield forecasts. The full off-diagonal Φ matrix allows cross-factor spillovers — for example, slope changes feeding into subsequent curvature movements — extending the diagonal AR(1) specification in Diebold and Li (2006).
+
+#### VAR(1) System
+
+$$\mathbf{F}_t = \mathbf{c} + \boldsymbol{\Phi}\,\mathbf{F}_{t-1} + \mathbf{u}_t$$
+
+$$\hat{\mathbf{F}}_{t+1} = \hat{\mathbf{c}}_t + \hat{\boldsymbol{\Phi}}_t\,\mathbf{F}_t$$
+
+where **F**ₜ = [β₀ₜ, β₁ₜ, β₂ₜ]′ and all estimates use only information available at rebalancing date t, strictly preventing look-ahead bias.
+
+---
+
+### 6.3 Signal Construction & Portfolio Weights
+
+Combines two complementary signals into a composite allocation, each exploiting a different dimension of yield curve information.
+
+The **mispricing signal** z-scores the cross-section of Nelson-Siegel residuals each month. A positive residual at an ETF's effective maturity indicates that the observed yield exceeds the fair-value curve — the bond is cheap relative to the model and is expected to mean-revert.
+
+The **directional signal** translates the VAR(1) one-month-ahead factor forecasts into implied yield changes at each ETF's effective maturity, negated so that forecast yield declines produce positive allocation signals. The forecast change is decomposed by factor with a 60/20/20 slope-tilt:
+
+$$\Delta\hat{y}_{i,t+1} = 0.60\cdot\Delta\hat{\beta}_{1}\cdot L_1(\tau_i) + 0.20\cdot\Delta\hat{\beta}_{0}\cdot L_0 + 0.20\cdot\Delta\hat{\beta}_{2}\cdot L_2(\tau_i)$$
+
+The **composite signal** is a 50/50 blend of the two z-scored signals, translated into portfolio weights via two schemes: signal-proportional (all seven ETFs, weights proportional to signal strength) and top-3 (equal weight to the three highest-signal ETFs). Weights are lagged one period to prevent look-ahead bias.
+
+---
+
+### 6.4 Signal Decomposition: NS Mispricing vs DL Directional
+
+The Diebold-Li directional signal outperforms the Nelson-Siegel mispricing signal in isolation, indicating that time-series forecasting of yield curve movements contributes more alpha than cross-sectional relative value. Combining both signals produces the best risk-adjusted performance, confirming that the two dimensions capture complementary information.
+
+| Strategy            | CAGR  | Ann. Vol | Sharpe | Sortino | Max DD   |
+| ------------------- | ----- | -------- | ------ | ------- | -------- |
+| NS Mispricing Only  | 1.32% | 7.83%    | 0.207  | 0.249   | −34.62%  |
+| DL Directional Only | 2.82% | 8.09%    | 0.384  | 0.539   | −20.84%  |
+| Equal Weight        | 2.37% | 8.17%    | 0.327  | 0.527   | −28.76%  |
+
+---
+
+### 6.5 Individual Factor Attribution
+
+The slope factor β₁ is the dominant source of return predictability, achieving a standalone Sharpe ratio of 0.441 — materially above both the level (0.327) and curvature (0.336) factors and the equal-weight benchmark (0.327). This finding is consistent with the macro-finance literature linking yield curve slope to business cycle dynamics and monetary policy expectations, and motivates the 60/20/20 slope-tilt in the directional signal.
+
+| Factor         | CAGR  | Ann. Vol | Sharpe | Sortino | Max DD   |
+| -------------- | ----- | -------- | ------ | ------- | -------- |
+| Level (β₀)     | 2.37% | 8.17%    | 0.327  | 0.527   | −28.76%  |
+| **Slope (β₁)** | **3.84%** | **9.55%** | **0.441** | **0.719** | **−19.77%** |
+| Curvature (β₂) | 2.44% | 8.17%    | 0.336  | 0.422   | −27.02%  |
+| Equal Weight   | 2.37% | 8.17%    | 0.327  | 0.527   | −28.76%  |
+
+---
+
+### 6.6 Full-Period Backtest Results (2009–2024)
+
+Both active strategies outperform the equal-weight benchmark on a risk-adjusted basis. The top-3 strategy achieves the highest Sharpe ratio (0.433) and CAGR (3.84%) at the cost of higher tracking error (4.24%). Sharpe ratio improvements are economically meaningful but do not clear conventional statistical significance thresholds under the Jobson-Korkie (1981) test, consistent with the low cross-sectional dispersion inherent to the Treasury ETF universe.
+
+| Strategy             | CAGR  | Ann. Vol | Sharpe | Sortino | Max DD   | JK z  | p-val | TE    |
+| -------------------- | ----- | -------- | ------ | ------- | -------- | ----- | ----- | ----- |
+| Signal-Proportional  | 2.79% | 8.52%    | 0.366  | 0.559   | −25.75%  | 0.509 | 0.611 | 2.59% |
+| Top-3                | 3.84% | 9.79%    | 0.433  | 0.690   | −26.55%  | 0.982 | 0.326 | 4.24% |
+| Equal Weight         | 2.37% | 8.17%    | 0.327  | 0.527   | −28.76%  | —     | —     | —     |
+
+---
+
+### 6.7 Sub-Period Analysis (2018–2021)
+
+The model adds the most value during periods of directional yield curve movement. Over the 2018–2021 window — spanning the 2019 Fed rate-cut cycle and the 2020 COVID-19 shock — both strategies substantially outperform the benchmark on every metric. The VAR(1) successfully anticipated the direction of curve shifts before they fully played out, producing Sharpe ratios more than 50% above the equal-weight benchmark and reducing maximum drawdowns by more than half.
+
+| Strategy             | CAGR   | Ann. Vol | Sharpe | Sortino | Max DD   |
+| -------------------- | ------ | -------- | ------ | ------- | -------- |
+| Signal-Proportional  | 6.42%  | 7.19%    | 0.902  | 2.937   | −5.30%   |
+| **Top-3**            | **10.23%** | **9.35%** | **1.090** | **4.708** | **−4.32%** |
+| Equal Weight         | 4.09%  | 6.92%    | 0.613  | 1.519   | −10.75%  |
+
+The strategy's alpha is state-dependent — strongest during regimes of elevated macroeconomic uncertainty and rapidly shifting yield curves, precisely the conditions where the VAR(1) factor forecasts carry the most information.
+
+---
+
 ## Repository Structure
 
 ```
@@ -522,25 +654,38 @@ Quant_Finance/
 │   ├── optimiser_max_sharpe.py          # standalone Max-Sharpe
 │   ├── optimiser_risk_parity.py         # standalone Risk-Parity
 │   └── optimiser_black_litterman.py     # standalone Black-Litterman
-└── 05_Option_Pricing/
-    ├── part_a_gbm_simulation.py             # HW3 Part 1 — GBM simulation & discretization
-    ├── part_b_binomial_pricing.py           # HW3 Part 2 — binomial trees & payoff diagrams
-    ├── part_c_model_comparison.py           # HW3 Part 3 — four-model pricing comparison
-    ├── pricing_binomial.py              # standalone Binomial (CRR) pricer
-    ├── pricing_black_scholes.py         # standalone Black-Scholes pricer + Greeks
-    ├── pricing_monte_carlo.py           # standalone Monte Carlo GBM pricer
-    └── pricing_heston.py               # standalone Heston SV model pricer
+├── 05_Option_Pricing/
+│   ├── p1_gbm_simulation.py             # HW3 Part 1 — GBM simulation & discretization
+│   ├── p2_binomial_pricing.py           # HW3 Part 2 — binomial trees & payoff diagrams
+│   ├── p3_model_comparison.py           # HW3 Part 3 — four-model pricing comparison
+│   ├── pricing_binomial.py              # standalone Binomial (CRR) pricer
+│   ├── pricing_black_scholes.py         # standalone Black-Scholes pricer + Greeks
+│   ├── pricing_monte_carlo.py           # standalone Monte Carlo GBM pricer
+│   └── pricing_heston.py               # standalone Heston SV model pricer
+└── 06_Bond_ETF_Strategy/
+    └── Nelson-Siegel_Diebold-Li_VAR_Bond_ETF_Strategy.ipynb
+        # 1.  Setup — constants, ETF universe, decay parameter λ
+        # 2.  Data — FRED par yields + yfinance ETF prices, month-end alignment
+        # 3.  Descriptive Analysis — yield summary stats, ETF return stats, correlations
+        # 4.  Nelson-Siegel Curve Fitting — cross-sectional OLS, condition number κ
+        # 5.  Diebold-Li VAR(1) Forecasts — expanding-window VAR, one-step-ahead forecasts
+        # 6.  Helper Functions — portfolio metrics, Jobson-Korkie test
+        # 7.  Signal Decomposition — NS mispricing vs DL directional in isolation
+        # 8.  Individual Factor Attribution — β₀ / β₁ / β₂ standalone performance
+        # 9.  Signal Construction & Portfolio Weights — composite signal, two weighting schemes
+        # 10. Backtest — monthly rebalancing, lagged weights, return series
+        # 11. Performance Metrics — CAGR, Sharpe, Sortino, max drawdown, tracking error
+        # 12. Results — Full Period (2009–2024) — comparison table + cumulative return chart
+        # 13. Sub-Period (2018–2021) — 2019 rate-cut cycle + COVID-19 shock stress-test
 ```
 
-**Run order for option pricing:**
+**Data dependency for section 6:**
 
 ```
-python part_a_gbm_simulation.py     # GBM paths — no dependencies
-python part_b_binomial_pricing.py   # binomial trees — no dependencies
-python part_c_model_comparison.py   # four-model comparison — no dependencies
+# FRED CSV files required (place in same directory as notebook):
+DGS2.csv  DGS3.csv  DGS5.csv  DGS7.csv  DGS10.csv  DGS20.csv  DGS30.csv
+# Update the file path in Cell 3 before running
 ```
-
-Each standalone pricer (`pricing_*.py`) is fully self-contained and requires no input files.
 
 ---
 
@@ -548,8 +693,10 @@ Each standalone pricer (`pricing_*.py`) is fully self-contained and requires no 
 
 - **Python** — Primary implementation language for all algorithms
 - **NumPy / Pandas** — Data manipulation and matrix operations
-- **yfinance** — Market data download
+- **yfinance** — Market data download (ETF prices)
+- **FRED / pandas-datareader** — Treasury par yield data (DGS series)
 - **SciPy** (`scipy.optimize.minimize`, SLSQP; `scipy.stats`) — Constrained optimisation and statistical testing
+- **statsmodels** (`VAR`) — Vector autoregression for Diebold-Li factor dynamics
 - **Matplotlib** — Visualisation
 - **Kenneth R. French Data Library** — Factor data for regression models
 
@@ -557,16 +704,25 @@ Each standalone pricer (`pricing_*.py`) is fully self-contained and requires no 
 
 ## References
 
+- Ang, A., & Piazzesi, M. (2003). *A no-arbitrage vector autoregression of term structure dynamics with macroeconomic and latent variables.* Journal of Monetary Economics, 50, 745–787.
+- Annaert, J., Claes, A.G.P., De Ceuster, M.J.K., & Zhang, H. (2010). *Estimating the yield curve using the Nelson-Siegel model: A ridge regression approach.* Working Paper, Universiteit Antwerpen.
 - Black, F., & Litterman, R. (1992). *Global portfolio optimization.* Financial Analysts Journal, 48(5), 28–43.
 - Black, F., & Scholes, M. (1973). *The pricing of options and corporate liabilities.* Journal of Political Economy, 81(3), 637–654.
 - Cox, J. C., Ross, S. A., & Rubinstein, M. (1979). *Option pricing: A simplified approach.* Journal of Financial Economics, 7(3), 229–263.
+- Diebold, F.X., & Li, C. (2006). *Forecasting the term structure of government bond yields.* Journal of Econometrics, 130(2), 337–364.
+- Diebold, F.X., Li, C., & Yue, V.Z. (2008). *Global yield curve dynamics and interactions: A dynamic Nelson-Siegel approach.* Journal of Econometrics, 146(2), 351–363.
 - Fama, E. F., & French, K. R. (1993). *Common risk factors in the returns on stocks and bonds.* Journal of Financial Economics, 33(1), 3–56.
 - Garman, M. B., & Klass, M. J. (1980). *On the estimation of security price volatilities from historical data.* Journal of Business, 53(1), 67–78.
 - Heston, S. L. (1993). *A closed-form solution for options with stochastic volatility with applications to bond and currency options.* Review of Financial Studies, 6(2), 327–343.
+- Jobson, J.D., & Korkie, B.M. (1981). *Performance hypothesis testing with the Sharpe and Treynor measures.* Journal of Finance, 36(4), 889–908.
+- Litterman, R., & Scheinkman, J. (1991). *Common factors affecting bond returns.* Journal of Fixed Income, 1(1), 54–61.
 - Maillard, S., Roncalli, T., & Teïletche, J. (2010). *The properties of equally weighted risk contribution portfolios.* Journal of Portfolio Management, 36(4), 60–74.
+- Nelson, C.R., & Siegel, A.F. (1987). *Parsimonious modeling of yield curves.* Journal of Business, 60(4), 473–489.
 
 ---
 
 ## Author
 
 **Luan Ferreira de Souza**
+
+Section 6 (Dynamic Bond ETF Allocation) is a group research project co-authored with Miles Choquette, Luka Gabadadze, Jingying Gao, and Zhe Chen.
