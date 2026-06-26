@@ -1,7 +1,7 @@
 
 # Quantitative Finance Algorithms
 
-A collection of quantitative finance algorithms implemented during the Quantitative Methods in Finance and Quantitative Portfolio Management graduate courses at Northeastern University, as part of the Master of Science in Finance program.
+A collection of quantitative finance algorithms implemented during the Quantitative Methods in Finance, Quantitative Portfolio Management, and Empirical Methods in Finance graduate courses at Northeastern University, as part of the Master of Science in Finance program.
 
 ---
 
@@ -32,6 +32,12 @@ A collection of quantitative finance algorithms implemented during the Quantitat
   * [6.5 Individual Factor Attribution](#65-individual-factor-attribution)
   * [6.6 Full-Period Backtest Results (2009–2024)](#66-full-period-backtest-results-20092024)
   * [6.7 Sub-Period Analysis (2018–2021)](#67-sub-period-analysis-20182021)
+- [7. PCA Factor Strategy — Finding Factors from CRSP Returns](#7-pca-factor-strategy--finding-factors-from-crsp-returns)
+  * [7.1 Data Construction & Return Matrix](#71-data-construction--return-matrix)
+  * [7.2 PCA Implementation & Component Selection](#72-pca-implementation--component-selection)
+  * [7.3 Factor Interpretation](#73-factor-interpretation)
+  * [7.4 Factor Views & Portfolio Construction](#74-factor-views--portfolio-construction)
+  * [7.5 Portfolio Results](#75-portfolio-results)
 
 ---
 
@@ -635,6 +641,92 @@ The strategy's alpha is state-dependent — strongest during regimes of elevated
 
 ---
 
+## 7. PCA Factor Strategy — Finding Factors from CRSP Returns
+
+A PCA-driven long-only equity portfolio built on CRSP common stocks (NYSE / AMEX / NASDAQ, January 2010 – December 2024). Rather than imposing Fama-French factor definitions, the strategy extracts systematic return structure purely from the data, interprets each retained component economically, forms directional views, and selects 30 equal-weighted stocks whose loading profile matches those views. The pipeline addresses the core question motivating the project: if Fama-French factors were data-mined from history, can a purely statistical approach extract more durable premia from data it has never seen?
+
+### Universe & Data
+
+- **Stock universe:** NYSE, AMEX, and NASDAQ common stocks (`exchcd ∈ {1, 2, 3}`, `shrcd ∈ {10, 11}`)
+- **Delisting returns:** Merged where available to avoid survivorship bias
+- **Minimum history:** 60 months of returns required in the training window
+- **Training period:** January 2010 – December 2024 (180 months, 39 stocks after filter)
+
+---
+
+### 7.1 Data Construction & Return Matrix
+
+The CRSP monthly return file is filtered to common stocks on major exchanges. Delisting returns are merged where available. The cleaned data is pivoted into a $(T \times N)$ return matrix $R$, then column-standardised to $(\mu = 0,\ \sigma = 1)$ using training-period statistics exclusively, ensuring no forward-looking information enters the PCA.
+
+---
+
+### 7.2 PCA Implementation & Component Selection
+
+PCA decomposes the standardised return matrix via the economy SVD:
+
+$$R = U \Sigma V^\top$$
+
+where columns of $V \in \mathbb{R}^{N \times k}$ are the principal directions (loadings) and the loading for stock $i$ on component $j$ is $\varphi_{ij} = V_{ij}$. Four components are retained based on the scree plot — the marginal variance contribution drops sharply after PC4, and each of the first four components remains economically interpretable.
+
+| Component | Variance Explained | Cumulative |
+| --------- | ------------------ | ---------- |
+| PC1       | 33.31%             | 33.31%     |
+| PC2       | 4.83%              | 38.14%     |
+| PC3       | 4.36%              | 42.50%     |
+| PC4       | 3.80%              | 46.30%     |
+
+---
+
+### 7.3 Factor Interpretation
+
+**PC1 — Broad Market / Systematic Risk.** PC1 loads positively across almost all stocks, reflecting exposure to aggregate equity-market movements. The highest-loading names — AMAT (0.174), SNPS (0.170), ASML (0.169), KLAC (0.168) — are technology and semiconductor firms whose returns are tightly coupled to economic growth and capital investment cycles. Lower loadings such as PDD (0.042) and REGN (0.051) correspond to healthcare and niche-demand firms with more defensive return profiles. PC1 is the statistical analogue of the market factor.
+
+**PC2 — Defensive Consumption & Healthcare vs Innovation-Driven Growth.** PC2 draws a sharp line between stable, earnings-predictable businesses and high-growth technology names. High PC2 loadings — PEP (0.316), AMGN (0.312), MDLZ (0.308), GILD (0.238), CMCSA (0.211) — are consumer-staple and pharmaceutical companies. Strongly negative loadings — CRWD (−0.247), COIN (−0.229), NVDA (−0.193), MRVL (−0.185), MSTR (−0.170) — depend on innovation and forward growth expectations.
+
+**PC3 — Semiconductor Investment Cycle.** PC3 differentiates firms exposed to semiconductor capital-expenditure cycles from those with more stable revenue structures. The most negative loadings — MU (−0.219), AMAT (−0.210), KLAC (−0.210), LRCX (−0.208) — are semiconductor equipment and memory makers whose revenues swing with chip demand. Positive loadings — WDAY (0.273), CRWD (0.245), PYPL (0.211), CSX (0.205) — are software and infrastructure firms less directly tied to the capex cycle.
+
+**PC4 — Innovation Platform vs Mature Stability.** PC4 separates innovation-dependent platform companies — REGN (0.291), EQIX (0.271), AMZN (0.251), NFLX (0.189) — from mature operators with stable, established structures — MAR (−0.265), ADI (−0.249), BKNG (−0.228), AMAT (−0.193).
+
+---
+
+### 7.4 Factor Views & Portfolio Construction
+
+Views are formed on PC1 and PC3 only; PC2 and PC4 receive neutral (zero) weight.
+
+| Component | View                  | Rationale                                                                                                   |
+| --------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| PC1       | Positive              | Continued AI investment, digitalisation, and stable macro conditions support broad equity-market performance |
+| PC2       | Neutral               | Both defensive and growth segments offer credible return paths depending on macro regime                    |
+| PC3       | Positive (low PC3)    | AI infrastructure build-out and cloud capex growth support semiconductor demand; most negative PC3 stocks are most sensitive to this cycle |
+| PC4       | Neutral               | Performance within this dimension is predominantly idiosyncratic                                            |
+
+Stocks are ranked by a linear scoring rule:
+
+$$s_i = 0.5 \cdot \varphi_{i,1}\ -\ 0.5 \cdot \varphi_{i,3}$$
+
+The top 30 stocks by $s_i$ form an equal-weighted, long-only portfolio with weight $w_i = 1/30$.
+
+---
+
+### 7.5 Portfolio Results
+
+| Metric              | Value                          |
+| ------------------- | ------------------------------ |
+| Stocks selected     | 30                             |
+| Weighting           | Equal (1/30 each)              |
+| Semiconductor names | 13 / 30 (43%)                  |
+| Scoring formula     | 0.5 × PC1 − 0.5 × PC3         |
+| Training period     | Jan 2010 – Dec 2024            |
+| Top name by score   | AMAT (0.192)                   |
+
+The highest-scoring names confirm the thesis directly. AMAT leads with PC1 = 0.174 and PC3 = −0.210 (score 0.192); KLAC (0.189) and LRCX (0.186) follow with nearly identical profiles — all pure-play semiconductor equipment makers that benefit most when both the broad market and the AI capex cycle are strong. MU carries the most negative PC3 of any selected stock (−0.219), consistent with its role as the most cycle-sensitive name. ASML (0.183) combines a top-tier PC1 loading with deep negative PC3, reflecting its monopoly position in EUV lithography equipment.
+
+Not all 30 names are semiconductor stocks. ADSK (PC1 = 0.166), ADBE (0.158), and CSCO (0.141) score well primarily through market beta with neutral PC3 exposure, adding diversification without diluting the core view. Biotech names — GILD, REGN, VRTX, AMGN — contribute a partial defensive cushion.
+
+The 43% semiconductor concentration is a consequence of the scoring formula, not a manual sector target. The primary risk is a reversal in AI capital expenditure or a semiconductor inventory correction, which would affect a large portion of the portfolio simultaneously — the direct cost of expressing a concentrated factor view.
+
+---
+
 ## Repository Structure
 
 ```
@@ -662,21 +754,31 @@ Quant_Finance/
 │   ├── pricing_black_scholes.py         # standalone Black-Scholes pricer + Greeks
 │   ├── pricing_monte_carlo.py           # standalone Monte Carlo GBM pricer
 │   └── pricing_heston.py               # standalone Heston SV model pricer
-└── 06_Bond_ETF_Strategy/
-    └── Nelson-Siegel_Diebold-Li_VAR_Bond_ETF_Strategy.ipynb
-        # 1.  Setup — constants, ETF universe, decay parameter λ
-        # 2.  Data — FRED par yields + yfinance ETF prices, month-end alignment
-        # 3.  Descriptive Analysis — yield summary stats, ETF return stats, correlations
-        # 4.  Nelson-Siegel Curve Fitting — cross-sectional OLS, condition number κ
-        # 5.  Diebold-Li VAR(1) Forecasts — expanding-window VAR, one-step-ahead forecasts
-        # 6.  Helper Functions — portfolio metrics, Jobson-Korkie test
-        # 7.  Signal Decomposition — NS mispricing vs DL directional in isolation
-        # 8.  Individual Factor Attribution — β₀ / β₁ / β₂ standalone performance
-        # 9.  Signal Construction & Portfolio Weights — composite signal, two weighting schemes
-        # 10. Backtest — monthly rebalancing, lagged weights, return series
-        # 11. Performance Metrics — CAGR, Sharpe, Sortino, max drawdown, tracking error
-        # 12. Results — Full Period (2009–2024) — comparison table + cumulative return chart
-        # 13. Sub-Period (2018–2021) — 2019 rate-cut cycle + COVID-19 shock stress-test
+├── 06_Bond_ETF_Strategy/
+│   └── Nelson-Siegel_Diebold-Li_VAR_Bond_ETF_Strategy.ipynb
+│       # 1.  Setup — constants, ETF universe, decay parameter λ
+│       # 2.  Data — FRED par yields + yfinance ETF prices, month-end alignment
+│       # 3.  Descriptive Analysis — yield summary stats, ETF return stats, correlations
+│       # 4.  Nelson-Siegel Curve Fitting — cross-sectional OLS, condition number κ
+│       # 5.  Diebold-Li VAR(1) Forecasts — expanding-window VAR, one-step-ahead forecasts
+│       # 6.  Helper Functions — portfolio metrics, Jobson-Korkie test
+│       # 7.  Signal Decomposition — NS mispricing vs DL directional in isolation
+│       # 8.  Individual Factor Attribution — β₀ / β₁ / β₂ standalone performance
+│       # 9.  Signal Construction & Portfolio Weights — composite signal, two weighting schemes
+│       # 10. Backtest — monthly rebalancing, lagged weights, return series
+│       # 11. Performance Metrics — CAGR, Sharpe, Sortino, max drawdown, tracking error
+│       # 12. Results — Full Period (2009–2024) — comparison table + cumulative return chart
+│       # 13. Sub-Period (2018–2021) — 2019 rate-cut cycle + COVID-19 shock stress-test
+└── 07_PCA_Factor_Strategy/
+    └── pca_factor_strategy.py
+        # 1. Data Construction — CRSP filter, delisting returns, return matrix
+        # 2. Standardisation — zero-mean unit-variance using training period only
+        # 3. PCA — scree plot, k=4 components retained (46.30% variance explained)
+        # 4. Loadings Table — top-5 and bottom-5 stocks per component
+        # 5. Factor Interpretation — PC1 market, PC2 defensive/growth, PC3 semi cycle, PC4 platform/maturity
+        # 6. Factor Views — positive PC1, neutral PC2/PC4, positive low-PC3
+        # 7. Portfolio Scoring — score = 0.5×PC1 − 0.5×PC3
+        # 8. Portfolio Construction — top-30 by score, equal-weighted, long-only
 ```
 
 **Data dependency for section 6:**
@@ -697,6 +799,7 @@ DGS2.csv  DGS3.csv  DGS5.csv  DGS7.csv  DGS10.csv  DGS20.csv  DGS30.csv
 - **FRED / pandas-datareader** — Treasury par yield data (DGS series)
 - **SciPy** (`scipy.optimize.minimize`, SLSQP; `scipy.stats`) — Constrained optimisation and statistical testing
 - **statsmodels** (`VAR`) — Vector autoregression for Diebold-Li factor dynamics
+- **scikit-learn** (`PCA`, `StandardScaler`) — Principal component analysis
 - **Matplotlib** — Visualisation
 - **Kenneth R. French Data Library** — Factor data for regression models
 
